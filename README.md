@@ -93,72 +93,81 @@ places on different systems. `VINTR` is index 8 on macOS and 0 on Linux;
 
 ## Part 1 — the descent
 
-The first three puzzles all live in `LFLAG`, which isn't an accident. `IFLAG`
-and `OFLAG` only substitute one byte for another; `LFLAG` holds the policy —
-who owns a keystroke, the kernel or you. It's also the only order that's
-observable: in canonical mode the line discipline hands you a finished line no
-matter what `ICRNL` is doing, so puzzles 5 and 6 stay invisible until 2 lands.
+Each puzzle switches off one service and asks what it was worth. The specs are
+below; the reasoning — why this order, what each service was doing for you — is
+in [Take a terminal apart, then build it back][post], and the worked solutions
+are in `ANSWERS.md`.
 
-**1. `disable_echo`** — turn off `ECHO`. Note what *doesn't* change: the
-keystrokes still reach the program. Echo is a display decision, and switching
-it off is the entirety of `getpass`.
+**1. `disable_echo`** — turn off `ECHO`. The keystrokes must still reach the
+program: this is display only.
 
-**2. `disable_line_buffering`** — turn off `ICANON`, then set `VMIN`/`VTIME` to
-say when a read is satisfied. Two things break at once: reads no longer wait
-for Return, and backspace stops working, because the edit buffer you just threw
-away was the thing erasing characters. `0x7f` is now yours to interpret.
+**2. `disable_line_buffering`** — turn off `ICANON`, then set `VMIN` and
+`VTIME` in `mode[CC]` to say when a read is satisfied: return as soon as at
+least one byte is available, never time out.
+**Warning:** a cooked terminal already has `VMIN=1, VTIME=0`, so clearing
+`ICANON` alone looks like a complete answer. One test hands you a terminal
+someone else configured.
 
-**3. `disable_signal_chars`** — turn off `ISIG`. A byte matching `VINTR` is
-acted on and *discarded*; with the flag off, `0x03` is ordinary input. Same
-flag governs `VQUIT` (`0x1c`) and `VSUSP` (`0x1a`).
+**3. `disable_signal_chars`** — turn off `ISIG`, so `0x03` becomes ordinary
+input. The same flag governs `VQUIT` (`0x1c`) and `VSUSP` (`0x1a`).
 
-**3b. `disable_signal_flush`** — interception and *flushing the queues* are two
-separate consequences of the same character. `NOFLSH` unpicks them: leave
-`ISIG` on, and INTR discards nothing but itself. This is why Ctrl-C wipes a
-half-typed shell command. Note the direction — you set a bit to switch a
-behaviour off, because the flag is named for the absence.
+**3b. `disable_signal_flush`** — leave `ISIG` on and stop INTR/QUIT/SUSP
+discarding the queues.
+**Warning:** you'll be *setting* a bit to switch a behaviour off, because the
+flag is named for the absence.
 
-**4. `disable_flow_control`** — turn off `IXON`. `0x13` halts all output until
-`0x11` releases it, and neither byte is delivered. It's the answer to every
-terminal that ever "froze". Note the geography: the flag lives in `IFLAG`,
-because what's watched is *input* — even though what it controls is output.
+**4. `disable_flow_control`** — stop `0x13` halting output and `0x11` releasing
+it. One flag, and it isn't in the field the effect suggests.
+**Warning:** rebinding `VSTOP`/`VSTART` is the tempting wrong answer — `0x00`
+doesn't mean "no character", and two tests check for it.
 
-**4b. `disable_extended_chars`** — turn off `IEXTEN`. Ctrl-V takes the next
-byte literally and Ctrl-O discards output, and both survive `ICANON` and `ISIG`
-going down. There is no `OPOST`-style master switch over input; `IEXTEN` masters
-only this annex, which is why raw mode collects flags one at a time.
+**4b. `disable_extended_chars`** — turn off `IEXTEN`. Ctrl-V (`0x16`) and
+Ctrl-O (`0x0f`) survive `ICANON` and `ISIG` both being off; one `LFLAG` bit
+gates them.
 
-**5. `disable_cr_translation`** — turn off `ICRNL`. The test to sit with is the
-canonical one: with line buffering still on, Return stops ending the line,
-because the delimiter is `\n` and nothing is making one. Ctrl-J still works.
+**5. `disable_cr_translation`** — turn off `ICRNL`, so Return delivers `\r`.
+**Warning:** with line buffering still on, Return then stops ending the line at
+all — the delimiter is `\n` and nothing is making one. Ctrl-J still does.
 
-**6. `disable_output_processing`** — turn off `OPOST`. Its main tenant is
-`ONLCR`, which rewrites every `\n` into `\r\n`. With it off, output staircases
-off the right edge. `OPOST` is the master switch over all output rewriting.
+**6. `disable_output_processing`** — turn off `OPOST`, so output crosses byte
+for byte.
+**Warning:** `ONLCR` is only the tenant. One test arms `OCRNL` as well, to
+check you cleared the master switch rather than the one rule.
 
-**7. `make_raw` and `raw_mode`** — puzzles 1–6 assembled, then a context
-manager, because a raw terminal is a held resource: save the attributes,
-restore them in a `finally`, and the test crashes on purpose to check you meant
-it. Skip it and your first uncaught exception leaves the shell with no echo.
-(Blind-type `reset`, press Return.)
+**7. `make_raw` and `raw_mode`** — puzzles 1–6 assembled, built from your own
+earlier answers. Then `raw_mode(fd)`, a context manager that saves the
+attributes before touching anything and restores them in a `finally`; the test
+crashes on purpose inside the block.
+**Warning:** leave `NOFLSH` out. With `ISIG` off, no byte is recognized as a
+signal character, so there is no flush left to suppress — and the stdlib-diff
+test compares that bit.
 
 ## Part 2 — building it back
 
-Nothing here switches those services back on. From now on you *are* them —
+Nothing here switches those services back on: you write them instead, as
 userspace code on the program side of a terminal your own `make_raw` stripped
 bare. These are the first puzzles whose before-tests need earlier work.
 
 **8. `echo_back`** — given the bytes a read returned, produce the bytes to
-write so typing shows up. Mostly the bytes themselves. The wrinkle is Return:
-it arrives as `\r` and nothing appends the line feed for you, so reaching the
-next line is `\r\n` and both bytes are yours.
+write so the person typing sees them.
+**Warning:** Return arrives as `\r` and nothing appends the line feed for you.
+Both bytes are yours.
 
-**9. `LineEditor`** — canonical mode, rebuilt. `feed(byte)` returns bytes to
-echo now and, on Return, the finished line. Backspace has to shrink the buffer
-*and* clean the screen: `\b` alone only moves the cursor, so wiping a character
-is the three-byte dance `\b` space `\b`. Ctrl-U is the same dance for the whole
-line. When it passes, re-read `test_P02_before_backspace_never_reaches_the_program` —
-same assertion, except now the someone implementing backspace is you.
+**9. `LineEditor`** — `feed(byte)` returns a pair: bytes to echo now, and the
+finished line once the byte completes one (`None` otherwise), with `\n`
+appended exactly as cooked mode delivered it in puzzle 2.
+
+| byte | | behaviour |
+|---|---|---|
+| printable | | buffer it, echo it |
+| `0x7f` | `VERASE` | drop the last buffered byte, wipe it from the screen; do nothing on an empty buffer |
+| `0x15` | `VKILL` | erase the whole buffered line the same way |
+| `0x0d` | Return | echo `\r\n`, deliver the line, start the next one |
+
+**Warning:** `\b` alone only moves the cursor. Wiping a character is the
+three-byte dance `\b` space `\b`.
+
+[post]: https://samlaf.github.io/programming/take-a-terminal-apart-then-build-it-back.html
 
 ## Roadmap
 
