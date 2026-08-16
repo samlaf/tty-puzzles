@@ -1,9 +1,8 @@
 """The pty rig every puzzle is checked against. You don't edit this file.
 
-A `Terminal` is a real pty pair, so the kernel's line discipline does the
-actual work -- nothing here simulates terminal behaviour. What makes it
-testable is that you hold *both* ends at once, which you never do in real
-life:
+A `Pty` holds both ends of a real pseudo-terminal, so the kernel's line
+discipline does the actual work -- nothing here simulates it. Holding both
+ends at once is what makes it testable, and is what you never do in real life:
 
     master  the screen-and-keyboard end   ->  press(), screen()
     slave   the program end               ->  delivered(), emit()
@@ -17,9 +16,18 @@ is exactly why both ends have to be observable for the change to be visible.
 That's the assertion most puzzles need: not "the wrong bytes came out" but
 "nothing came out at all, because the kernel is still holding it."
 
-A fresh pty does not start in the same state on every platform, so every
-`Terminal` is stamped with the explicit cooked baseline below before any
-puzzle sees it. See COOKED_FLAGS for what that means and why.
+A fresh pty does not start in the same state on every platform, so every `Pty`
+is stamped with the explicit cooked baseline below before any puzzle sees it.
+See COOKED_FLAGS for what that means and why.
+
+Master and slave are POSIX's names for a pty's two ends -- newer documentation
+sometimes says primary/subsidiary, but the C API is still ptsname, grantpt,
+unlockpt. The slave is the end that carries the termios flags.
+
+These ptys also have no controlling terminal. POSIX delivers INTR's SIGINT to
+the tty's foreground process group, not to whoever typed it, and no session
+ever attaches to a pty opened here -- so puzzles can press all the ^C they
+want without your shell hearing any of it.
 """
 
 import os
@@ -40,7 +48,7 @@ TIMEOUT = 0.25
 
 # --- the cooked baseline ----------------------------------------------------
 #
-# "An ordinary cooked terminal" has to mean the same thing on every machine or
+# "An ordinary cooked tty" has to mean the same thing on every machine or
 # the puzzles aren't about the flags any more, they're about your kernel. It
 # does not: a fresh pty on macOS and on Linux disagree on ten flags, and two of
 # those disagreements are load-bearing here.
@@ -51,14 +59,16 @@ TIMEOUT = 0.25
 #   ECHOK   off (macOS) / on (Linux).  This is the kernel's echo for the KILL
 #           character, which is precisely what the LineEditor puzzle rebuilds.
 #           Pinned off, leaving ECHOKE to erase the line visually -- the
-#           behaviour a modern terminal shows.
+#           behaviour a modern tty shows.
 #
 # The rest (BRKINT, IMAXBEL, HUPCL, ...) have nothing to say on a pty and are
 # pinned only so that "untouched" is one state rather than two.
 #
 # Names, not numbers: the constants are not portable *values* either, and the
 # c_cc indices are wildly different -- VINTR is 8 on macOS and 0 on Linux,
-# VMIN is 16 there and 6 here. Anything absent on a platform is skipped.
+# VMIN is 16 there and 6 here. Anything absent on a platform is skipped, and
+# "platform" includes the Python version: 3.14 on macOS names VSTATUS and
+# VDSUSP where 3.12 does not.
 
 COOKED_FLAGS = {
     IFLAG: {
@@ -112,10 +122,10 @@ DISABLED_CC = [
     "VDSUSP", "VSTATUS", # BSD extras: ^Y delayed-suspend, ^T status line
     "VSWTC", "VSWTCH",   # Linux shell-layer switch, undefined in practice
 ]
-"""Control characters pinned to _POSIX_VDISABLE -- bound to no key at all.
+"""Special characters pinned to _POSIX_VDISABLE -- bound to no key at all.
 
 These are the slots that exist on one platform and not the other, so leaving
-them at their defaults makes "an untouched cooked terminal" mean two different
+them at their defaults makes "an untouched cooked tty" mean two different
 things. Note the value used: _POSIX_VDISABLE is 0x00 on Linux and 0xff on
 macOS, so it has to be asked for at runtime rather than written as a literal.
 Setting one of these to 0 on macOS would *arm* it against the NUL byte instead
@@ -168,18 +178,18 @@ def _read(fd, timeout, limit=4096):
     return os.read(fd, limit) if ready else b""
 
 
-class Terminal:
-    """A pty pair in cooked mode, then put into `configure`'s mode.
+class Pty:
+    """Both ends of a pty, in cooked mode, then put into `configure`'s mode.
 
-    `Terminal()` with no argument is an ordinary cooked terminal -- the state
-    your shell hands every program it starts.
+    `configure` is applied to the slave, which is the end carrying the termios
+    flags. `Pty()` with no argument leaves an ordinary cooked tty there -- the
+    state your shell hands every program it starts.
 
-    `preset` writes control characters into the mode *after* the baseline and
-    *before* `configure` sees it, standing in for a terminal some earlier
-    program left in a state of its own. A puzzle that only passes on a
-    pristine pty hasn't really been tested: the whole point of
-    tcgetattr/modify/tcsetattr is that you don't know what you're starting
-    from.
+    `preset` writes special characters into the mode *after* the baseline and
+    *before* `configure` sees it, standing in for a tty some earlier program
+    left in a state of its own. A puzzle that only passes on a pristine pty
+    hasn't really been tested: the whole point of tcgetattr/modify/tcsetattr is
+    that you don't know what you're starting from.
     """
 
     def __init__(self, configure=None, preset=None):
@@ -207,7 +217,7 @@ class Terminal:
     # --- the screen-and-keyboard end -------------------------------------
 
     def press(self, data: bytes) -> None:
-        """Type at the terminal."""
+        """Type at the tty."""
         self.trace.record("press", data)
         os.write(self.master, data)
 

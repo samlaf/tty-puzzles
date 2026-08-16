@@ -1,6 +1,6 @@
 """Dump the default termios state of a freshly-opened pty.
 
-The ladder's before-tests describe "a cooked terminal you haven't touched".
+The ladder's before-tests describe "a cooked tty you haven't touched".
 That description has to hold on every platform, so first we need to know what
 each platform actually hands us. Run this on macOS and on Linux and diff the
 output: whatever differs is what the harness has to normalise.
@@ -60,7 +60,7 @@ def show_bits(mode, field, names, label):
 
 
 def describe_char(value):
-    """Render a control character the way stty does: ^C, ^?, <undef>.
+    """Render a special character the way stty does: ^C, ^?, <undef>.
 
     _POSIX_VDISABLE -- the value meaning "no key is bound to this" -- is 0x00
     on Linux and 0xff on macOS, so both have to read as undefined.
@@ -106,7 +106,7 @@ def main():
     print(f"ISPEED   = {mode[tty.ISPEED]}   OSPEED = {mode[tty.OSPEED]}")
     print()
 
-    print("control characters")
+    print("special characters")
     cc = mode[tty.CC]
     for name in CCHARS:
         if not hasattr(termios, name):

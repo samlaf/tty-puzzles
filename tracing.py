@@ -6,14 +6,13 @@ Every puzzle is a claim about one of two journeys:
     program wrote ->  [ line discipline ]  ->  the screen showed
 
 A failing assertion tells you the second half was wrong. It doesn't show you
-the first half, which is usually where the answer is. So `Terminal` records
-every leg of every journey, and the runner prints the record when a test
-fails.
+the first half, which is usually where the answer is. So `Pty` records every
+leg of every journey, and the runner prints the record when a test fails.
 
 Bytes are shown in caret notation, the same way `stty -a` prints them: ^C for
 0x03, ^? for delete, ^M for the carriage return your Return key actually
-sends. A terminal's whole subject matter is bytes you can't see, so printing
-them raw would defeat the point.
+sends. The line discipline's whole subject matter is bytes you can't see, so
+printing them raw would defeat the point.
 """
 
 CONTROL_NAMES = {
@@ -54,7 +53,7 @@ def names(data: bytes) -> str:
 
 
 class Trace:
-    """The ordered log of one Terminal's traffic, both ends, both directions."""
+    """The ordered log of one Pty's traffic, both ends, both directions."""
 
     # (verb, arrow-label) -- the label says which leg of which journey this is.
     LABELS = {
@@ -102,8 +101,8 @@ class Trace:
         return "\n".join(lines)
 
 
-# The runner has no handle on the Terminal a failing test built, so terminals
-# register their trace here and the runner reads it back. Reset per test.
+# The runner has no handle on the Pty a failing test built, so each Pty
+# registers its trace here and the runner reads it back. Reset per test.
 ACTIVE: list[Trace] = []
 
 
