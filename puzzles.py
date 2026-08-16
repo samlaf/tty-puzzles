@@ -44,6 +44,16 @@ def disable_line_buffering(mode):
     Two parts. Turn off the flag that makes reads wait for a line delimiter,
     then set the special chars that say when a read is satisfied: return as
     soon as at least one byte is there, and never time out.
+
+    Outside canonical mode those two chars form a small matrix worth
+    memorising:
+
+        VMIN >0, VTIME  0   once VMIN bytes exist; blocks indefinitely
+        VMIN  0, VTIME >0   first byte, or VTIME deciseconds -- whichever first
+        VMIN >0, VTIME >0   VMIN bytes, or VTIME after the *first* byte
+        VMIN  0, VTIME  0   immediately, with whatever is there, maybe nothing
+
+    You want the first row here. Puzzle 13 finds a use for the second.
     """
     raise NotImplementedError
 
@@ -133,6 +143,10 @@ def raw_mode(fd):
     restore them even when the body raises -- the test crashes on purpose
     to check you meant it. A TUI without this leaves the shell blind and
     uneditable on its first uncaught exception.
+
+    The classic trap: every puzzle here mutates the list it's handed (so
+    does tty.setraw). Feed make_raw the list you saved and your "restore"
+    writes raw attributes back. Keep a copy the mutation can't reach.
     """
     raise NotImplementedError
 

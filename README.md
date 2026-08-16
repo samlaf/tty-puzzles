@@ -13,11 +13,15 @@ the next four make you the service; the last four leave the kernel behind and
 talk to the emulator. Fill in `puzzles.py` until the tests pass — every stub's
 docstring is its spec.
 
-> The long-form writeup lives in the blog series: [Take a terminal apart,
-> then build it back][post] walks the ladder these puzzles climb, and [Three
-> things called raw][post3] is the reference — which thing the word
-> *terminal* names, the three kernel layers under the fd, and the whole flag
-> taxonomy.
+The idea is borrowed from Sasha Rush's
+[GPU Puzzles](https://github.com/srush/GPU-Puzzles), which inspired this repo —
+the same game, pointed at a different machine.
+
+> The companion blog series starts at [Your terminal has been editing
+> everything you type][post1] — the on-ramp — and [Three things called
+> raw][post3] is the reference to keep open while you work: which thing the
+> word *terminal* names, the three kernel layers under the fd, and the whole
+> flag taxonomy.
 
 ## Running it
 
@@ -41,10 +45,6 @@ check(1)
 
 Edit `puzzles.py` only. `harness.py`, `tracing.py` and `test_puzzles.py` are
 the rig.
-
-`ANSWERS.md` has a worked solution and a discussion for every puzzle. Read an
-entry after you've made its tests pass, or after you've been stuck long enough
-that the answer will actually stick.
 
 ## The puzzles
 
@@ -72,6 +72,10 @@ program side of the tty you stripped.
 | 9 | `LineEditor` | canonical mode |
 | 10 | `InterruptingEditor` | the interrupt — `0x03` means what you say it means |
 | 11 | `window_size`, `watch_resize` | how big is the window, and when did it change |
+
+When puzzle 9 passes, go back and re-read the puzzle 2 test that asserted
+backspace never reaches the program. Same assertion, byte for byte — except
+now the someone implementing backspace is you.
 
 **Part 3 — above the fd.** The kernel is out of opinions; everything here is
 a conversation with the terminal emulator, held in-band in the same stream as
@@ -124,5 +128,5 @@ python3 probe_defaults.py            # what your kernel hands you
 python3 probe_defaults.py --cooked   # what every puzzle actually starts from
 ```
 
-[post]: https://samlaf.github.io/programming/take-a-terminal-apart-then-build-it-back.html
+[post1]: https://samlaf.github.io/programming/your-terminal-has-been-editing-everything-you-type.html
 [post3]: https://samlaf.github.io/programming/three-things-called-raw.html
